@@ -1,5 +1,6 @@
 import random
 import string
+import hashlib
 import base64
 import json
 import os
@@ -30,25 +31,26 @@ def generate_password(length=12, use_digits=True, use_special=True, use_uppercas
 def check_password_complexity(password):
     """
     Проверка сложности пароля.
-    Возвращает оценку от 0 до 100 и уровень сложности.
+    Возвращает оценку от 0 до 100, звёзды (1-5) и уровень сложности.
     """
     score = 0
     details = []
     
-    # 1. Проверка длины (максимум 40 баллов)
+    # 1. Проверка длины (максимум 65 баллов)
     if len(password) >= 16:
-        score += 40
-        details.append("Длина отличная (+40)")
+        score += 65
+        details.append("Длина отличная (+65)")
     elif len(password) >= 12:
-        score += 30
-        details.append("Длина хорошая (+30)")
+        score += 50
+        details.append("Длина хорошая (+50)")
     elif len(password) >= 8:
-        score += 20
-        details.append("Длина приемлемая (+20)")
+        score += 25
+        details.append("Длина приемлемая (+25)")
     else:
+        score += 0
         details.append("Пароль слишком короткий (+0)")
     
-    # 2. Разнообразие символов (максимум 60 баллов)
+    # 2. Разнообразие символов (максимум 35 баллов)
     has_lower = any(c in string.ascii_lowercase for c in password)
     has_upper = any(c in string.ascii_uppercase for c in password)
     has_digit = any(c in string.digits for c in password)
@@ -58,51 +60,72 @@ def check_password_complexity(password):
     char_types = sum([has_lower, has_upper, has_digit, has_special])
     
     if char_types >= 4:
-        score += 60
-        details.append("Все типы символов (+60)")
+        score += 35
+        details.append("Все типы символов (+35)")
     elif char_types == 3:
-        score += 45
-        details.append("3 типа символов (+45)")
+        score += 25
+        details.append("3 типа символов (+25)")
     elif char_types == 2:
-        score += 30
-        details.append("2 типа символов (+30)")
-    elif char_types == 1:
         score += 15
-        details.append("1 тип символов (+15)")
+        details.append("2 типа символов (+15)")
+    elif char_types == 1:
+        score += 5
+        details.append("1 тип символов (+5)")
     
-    # Определение уровня сложности
-    if score >= 80:
+    # Определение уровня сложности и КОЛИЧЕСТВА звёзд (число от 1 до 5)
+    if score >= 90:
+        stars_count = 5
         level = "ОЧЕНЬ СЛОЖНЫЙ"
-    elif score >= 60:
+    elif score >= 75:
+        stars_count = 4
         level = "СЛОЖНЫЙ"
-    elif score >= 40:
+    elif score >= 60:
+        stars_count = 3
         level = "СРЕДНИЙ"
-    else:
+    elif score >= 40:
+        stars_count = 2
         level = "СЛАБЫЙ"
+    else:
+        stars_count = 1
+        level = "ОЧЕНЬ СЛАБЫЙ"
+
+    if len(password) < 8:
+        stars_count = 1
+        level = "ОЧЕНЬ СЛАБЫЙ"
+
+    # Создаём строку со звёздами (заполненные + пустые)
+    stars_string = "⭐" * stars_count + "☆" * (5 - stars_count)
     
-    return score, level, details
+    return score, level, stars_string, details
 
 # ==================== ШИФРОВАНИЕ ====================
 
-def encrypt_password(password, key="secret_key_123"):
+# Секретная соль
+SECRET_SALT = "my_secret_salt_8991"
+
+def encrypt_password(password):
     """
-    Простое шифрование пароля (base64).
+    Шифрование пароля с использованием соли и хеширования.
     """
-    # Комбинируем пароль с ключом
-    combined = password + key
-    # Кодируем в base64
-    encrypted = base64.b64encode(combined.encode()).decode()
+    # Комбинируем пароль с солью
+    combined = password + SECRET_SALT
+    # Создаём хеш SHA-256
+    hashed = hashlib.sha256(combined.encode()).digest()
+    # Кодируем в base64 для хранения
+    encrypted = base64.b64encode(hashed).decode()
     return encrypted
 
-def decrypt_password(encrypted_password, key="secret_key_123"):
+def decrypt_password(encrypted_password, original_password):
     """
-    Расшифровка пароля.
+    Проверка пароля (сравнение хешей).
+    Возвращает True, если пароль верный.
     """
-    # Декодируем base64
-    decoded = base64.b64decode(encrypted_password.encode()).decode()
-    # Убираем ключ
-    password = decoded.replace(key, "")
-    return password
+    # Создаём хеш из введённого пароля
+    combined = original_password + SECRET_SALT
+    hashed = hashlib.sha256(combined.encode()).digest()
+    encrypted = base64.b64encode(hashed).decode()
+    # Сравниваем с сохранённым
+    return encrypted == encrypted_password
 
 def save_passwords(passwords_list, filename="passwords.json"):
     """
@@ -115,6 +138,77 @@ def save_passwords(passwords_list, filename="passwords.json"):
     with open(filename, 'w', encoding='utf-8') as f:
         json.dump(encrypted_data, f, ensure_ascii=False, indent=2)
     print(f"Пароли сохранены в файл {filename}")
+
+# ==================== ИИ-ИНСТРУМЕНТ ====================
+
+# Список популярных (слабых) паролей - "готовые данные"
+POPULAR_PASSWORDS = [
+    "password", "123456", "12345678", "qwerty", "abc123", 
+    "monkey", "1234567", "letmein", "trustno1", "dragon",
+    "baseball", "iloveyou", "master", "sunshine", "ashley",
+    "bailey", "passw0rd", "shadow", "123123", "654321",
+    "superman", "qazwsx", "michael", "football", "password1"
+]
+
+# Простые паттерны, которые ИИ считает слабыми
+WEAK_PATTERNS = [
+    "123", "abc", "qwerty", "zxcv", "asdf"
+]
+
+def ai_password_check(password):
+    """
+    ИИ-проверка пароля на основе готовых данных.
+    Возвращает рекомендации по улучшению.
+    """
+    recommendations = []
+    password_lower = password.lower()
+    
+    # Проверка на длину
+    if len(password) < 8:
+        recommendations.append("⚠️  Пароль слишком короткий (меньше 8 символов)!")
+    elif len(password) < 12:
+        recommendations.append("⚠️  Рекомендуется увеличить длину до 12+ символов")
+    
+    # Проверка на популярность
+    if password_lower in POPULAR_PASSWORDS:
+        recommendations.append("⚠️  Пароль находится в списке популярных!")
+    
+    # Проверка на простые паттерны
+    for pattern in WEAK_PATTERNS:
+        if pattern in password_lower:
+            recommendations.append(f"⚠️  Содержит простой паттерн '{pattern}'")
+            break
+    
+    # Проверка на последовательности
+    if password.isdigit():
+        recommendations.append("⚠️  Только цифры — легко подобрать!")
+    
+    if password.isalpha():
+        recommendations.append("⚠️  Только буквы — недостаточно сложно!")
+    
+    # Проверка на чередование цифр и букв (простой паттерн)
+    import re
+    if re.match(r'^\d+[a-zA-Z]+$', password) or re.match(r'^[a-zA-Z]+\d+$', password):
+        if len(password) < 10:
+            recommendations.append("⚠️  Простой паттерн: цифры + буквы (или наоборот)")
+    
+    # Проверка на повторяющиеся символы
+    if len(set(password)) < len(password) / 2:
+        recommendations.append("⚠️  Много повторяющихся символов!")
+    
+    # Проверка на клавиатурные паттерны
+    keyboard_patterns = ['qwerty', 'asdf', 'zxcv', 'qazwsx', '1qaz', '2wsx']
+    for pattern in keyboard_patterns:
+        if pattern in password_lower:
+            recommendations.append(f"⚠️  Содержит клавиатурный паттерн '{pattern}'")
+            break
+    
+    # Проверка на отсутствие спецсимволов
+    has_special = any(c in "!@#$%^&*()-_=+" for c in password)
+    if not has_special and len(password) < 12:
+        recommendations.append("⚠️  Нет специальных символов (!@#$%^&*)")
+    
+    return recommendations
 
 # ==================== ИНТЕРФЕЙС ====================
 
@@ -140,11 +234,25 @@ def generate_password_menu():
     """
     print("\n--- НАСТРОЙКИ ГЕНЕРАЦИИ ---")
     
-    try:
-        length = int(input("Длина пароля (по умолчанию 12): ") or "12")
-    except ValueError:
-        length = 12
-    
+    while True:
+        length_input = input("Длина пароля (по умолчанию 12): ")
+        
+        # Если просто нажали Enter — берём 12
+        if length_input == '':
+            length = 12
+            break
+        
+        # Проверяем, что введены только цифры
+        if length_input.isdigit():
+            length = int(length_input)
+            if length < 1:
+                print("Длина пароля должна быть хотя бы 1 символ!")
+                continue
+            else:
+                break
+        else:
+            print("Нужно ввести число. Попробуйте снова.")
+
     use_uppercase = input("Заглавные буквы? (да/нет, по умолчанию да): ").lower() != 'нет'
     use_digits = input("Цифры? (да/нет, по умолчанию да): ").lower() != 'нет'
     use_special = input("Спецсимволы? (да/нет, по умолчанию да): ").lower() != 'нет'
@@ -154,8 +262,8 @@ def generate_password_menu():
     print(f"\n>>> Сгенерированный пароль: {password}")
     
     # Сразу проверяем сложность
-    score, level, details = check_password_complexity(password)
-    print(f">>> Сложность: {level} ({score}/100)")
+    score, level, stars, details = check_password_complexity(password)
+    print(f">>> Сложность: {level} {stars} ({score}/100)")
     
     return password
 
@@ -182,14 +290,23 @@ def check_password_menu():
         
         break
     
-    score, level, details = check_password_complexity(password)
+    score, level, stars, details = check_password_complexity(password)
+    
+    ai_recommendations = ai_password_check(password)
     
     print(f"\n--- РЕЗУЛЬТАТЫ ПРОВЕРКИ ---")
     print(f"Оценка: {score}/100")
-    print(f"Уровень: {level}")
+    print(f"Уровень: {level} {stars}")
     print("\nДетали:")
     for detail in details:
         print(f"  - {detail}")
+    
+    if ai_recommendations:
+        print("\n💡 ИИ-рекомендации:")
+        for rec in ai_recommendations:
+            print(f"  {rec}")
+    else:
+        print("\n✅ ИИ-анализ: пароль хороший!") 
 
 # ==================== ТЕСТЫ ====================
 
@@ -209,17 +326,25 @@ def run_tests():
     
     # Тест 2: Проверка сложности
     print("\nТест 2: Проверка сложности...")
-    score, level, details = check_password_complexity("StrongPass123!")
+    score, level, stars, details = check_password_complexity("StrongPass123!")
     assert score > 50, "Оценка слишком низкая!"
-    print(f"✓ Сложность определена: {level} ({score}/100)")
+    assert stars.count("⭐") >= 3, "Звёзд должно быть не меньше 3!"
+    print(f"✓ Сложность определена: {level} {stars} ({score}/100)")
     
     # Тест 3: Шифрование
-    print("\nТест 3: Шифрование/расшифровка...")
+    print("\nТест 3: Шифрование/проверка...")
     test_pwd = "TestPassword123"
     encrypted = encrypt_password(test_pwd)
-    decrypted = decrypt_password(encrypted)
-    assert decrypted == test_pwd, "Расшифровка не работает!"
+    
+    # Проверяем, что правильный пароль проходит проверку
+    is_valid = decrypt_password(encrypted, test_pwd)
+    assert is_valid == True, "Правильный пароль не прошёл проверку!"
     print("✓ Шифрование работает корректно")
+    
+    # Проверяем, что неправильный пароль не проходит
+    is_invalid = decrypt_password(encrypted, "WrongPassword")
+    assert is_invalid == False, "Неправильный пароль прошёл проверку!"
+    print("✓ Защита от неправильных паролей работает")
     
     print("\n" + "="*50)
     print("ВСЕ ТЕСТЫ ПРОЙДЕНЫ УСПЕШНО!")
@@ -252,7 +377,7 @@ if __name__ == "__main__":
             else:
                 print("Нет паролей для сохранения!")
                     
-        elif choice == "5":
+        elif choice == "4":
             print("\nДо свидания!")
             break
             
